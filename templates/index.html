@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audio Ripper</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #1a1d27;
+      border: 1px solid #2d3149;
+      border-radius: 16px;
+      padding: 2.5rem;
+      width: 100%;
+      max-width: 520px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+
+    h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #a78bfa;
+      margin-bottom: 0.4rem;
+    }
+
+    .subtitle {
+      color: #64748b;
+      font-size: 0.9rem;
+      margin-bottom: 2rem;
+    }
+
+    /* Steps */
+    .step { display: none; }
+    .step.active { display: block; }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed #3b3f5c;
+      border-radius: 12px;
+      padding: 2.5rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: #7c3aed;
+      background: rgba(124,58,237,0.06);
+    }
+    .drop-zone input[type="file"] {
+      display: none;
+    }
+    .drop-icon {
+      font-size: 2.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .drop-label {
+      font-size: 1rem;
+      color: #94a3b8;
+    }
+    .drop-label span {
+      color: #a78bfa;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .drop-hint {
+      font-size: 0.78rem;
+      color: #475569;
+      margin-top: 0.5rem;
+    }
+    .selected-file {
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      color: #7dd3fc;
+      word-break: break-all;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-block;
+      padding: 0.65rem 1.4rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary {
+      background: #7c3aed;
+      color: #fff;
+      width: 100%;
+      margin-top: 1.25rem;
+    }
+    .btn-primary:hover { opacity: 0.88; }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-secondary {
+      background: transparent;
+      color: #94a3b8;
+      border: 1px solid #3b3f5c;
+      margin-top: 0.75rem;
+      width: 100%;
+    }
+    .btn-secondary:hover { background: #1e2235; }
+
+    /* Progress */
+    .progress-wrap {
+      margin-top: 1.25rem;
+    }
+    .progress-bar-bg {
+      background: #252840;
+      border-radius: 999px;
+      height: 8px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #7c3aed, #a78bfa);
+      border-radius: 999px;
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+    .progress-label {
+      font-size: 0.82rem;
+      color: #64748b;
+      margin-top: 0.5rem;
+      text-align: center;
+    }
+
+    /* Rename step */
+    label.field-label {
+      display: block;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      margin-bottom: 0.5rem;
+    }
+    .input-group {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      border: 1px solid #3b3f5c;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #252840;
+    }
+    .input-group input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      padding: 0.65rem 0.85rem;
+      color: #e2e8f0;
+      font-size: 0.95rem;
+    }
+    .input-group .suffix {
+      padding: 0.65rem 0.85rem;
+      color: #64748b;
+      font-size: 0.9rem;
+      border-left: 1px solid #3b3f5c;
+      background: #1e2235;
+      user-select: none;
+    }
+
+    /* Download step */
+    .success-icon {
+      font-size: 3rem;
+      text-align: center;
+      margin-bottom: 0.75rem;
+    }
+    .success-msg {
+      text-align: center;
+      color: #86efac;
+      font-weight: 600;
+      font-size: 1rem;
+      margin-bottom: 0.5rem;
+    }
+    .success-sub {
+      text-align: center;
+      color: #64748b;
+      font-size: 0.85rem;
+      margin-bottom: 1.5rem;
+    }
+    .btn-download {
+      background: #059669;
+      color: #fff;
+      width: 100%;
+      font-size: 1rem;
+      padding: 0.75rem;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      font-weight: 700;
+      transition: opacity 0.15s;
+      text-decoration: none;
+      display: block;
+      text-align: center;
+    }
+    .btn-download:hover { opacity: 0.88; }
+
+    /* Error */
+    .error-box {
+      background: rgba(239,68,68,0.12);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      color: #fca5a5;
+      font-size: 0.85rem;
+      margin-top: 1rem;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Audio Ripper</h1>
+    <p class="subtitle">Extract lossless audio from any video as an .m4a file.</p>
+
+    <!-- Step 1: Upload -->
+    <div class="step active" id="step-upload">
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="file-input" accept="video/*" />
+        <div class="drop-icon">🎬</div>
+        <p class="drop-label">Drag &amp; drop your video, or <span id="browse-link">browse</span></p>
+        <p class="drop-hint">MP4, MKV, MOV, AVI, WebM and more &mdash; up to 4 GB</p>
+        <p class="selected-file" id="file-name"></p>
+      </div>
+
+      <div class="progress-wrap" id="progress-wrap" style="display:none">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progress-fill"></div>
+        </div>
+        <p class="progress-label" id="progress-label">Uploading&hellip;</p>
+      </div>
+
+      <button class="btn btn-primary" id="upload-btn" disabled>Extract Audio</button>
+      <div class="error-box" id="upload-error"></div>
+    </div>
+
+    <!-- Step 2: Rename -->
+    <div class="step" id="step-rename">
+      <div class="success-icon">🎵</div>
+      <p class="success-msg">Audio extracted!</p>
+      <p class="success-sub">Give your file a name before downloading.</p>
+
+      <label class="field-label" for="filename-input">File name</label>
+      <div class="input-group">
+        <input type="text" id="filename-input" placeholder="my-audio" autocomplete="off" />
+        <span class="suffix">.m4a</span>
+      </div>
+
+      <button class="btn btn-primary" id="confirm-name-btn">Get Download Link</button>
+      <button class="btn btn-secondary" id="rename-back-btn">Start over</button>
+      <div class="error-box" id="rename-error"></div>
+    </div>
+
+    <!-- Step 3: Download -->
+    <div class="step" id="step-download">
+      <div class="success-icon">✅</div>
+      <p class="success-msg">Your file is ready!</p>
+      <p class="success-sub" id="download-sub"></p>
+      <a class="btn-download" id="download-link" href="#" download>⬇&nbsp; Download .m4a</a>
+      <button class="btn btn-secondary" id="download-back-btn" style="margin-top:1rem">Convert another video</button>
+    </div>
+  </div>
+
+  <script>
+    const steps = {
+      upload: document.getElementById('step-upload'),
+      rename: document.getElementById('step-rename'),
+      download: document.getElementById('step-download'),
+    };
+
+    function showStep(name) {
+      Object.values(steps).forEach(el => el.classList.remove('active'));
+      steps[name].classList.add('active');
+    }
+
+    // ── Upload step ──────────────────────────────────────────────────────────
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const browseLink = document.getElementById('browse-link');
+    const fileNameEl = document.getElementById('file-name');
+    const uploadBtn = document.getElementById('upload-btn');
+    const progressWrap = document.getElementById('progress-wrap');
+    const progressFill = document.getElementById('progress-fill');
+    const progressLabel = document.getElementById('progress-label');
+    const uploadError = document.getElementById('upload-error');
+
+    let selectedFile = null;
+    let jobId = null;
+    let suggestedName = '';
+
+    browseLink.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('click', e => { if (e.target !== browseLink) fileInput.click(); });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) setFile(fileInput.files[0]);
+    });
+
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+    });
+
+    function setFile(file) {
+      selectedFile = file;
+      fileNameEl.textContent = file.name;
+      uploadBtn.disabled = false;
+      uploadError.style.display = 'none';
+      // Pre-fill name suggestion from video filename (strip extension)
+      suggestedName = file.name.replace(/\.[^.]+$/, '') || 'audio';
+    }
+
+    uploadBtn.addEventListener('click', () => {
+      if (!selectedFile) return;
+      uploadError.style.display = 'none';
+      uploadBtn.disabled = true;
+      progressWrap.style.display = 'block';
+      progressFill.style.width = '0%';
+      progressLabel.textContent = 'Uploading…';
+
+      const formData = new FormData();
+      formData.append('video', selectedFile);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/upload');
+
+      xhr.upload.addEventListener('progress', e => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 80); // 0-80% = upload
+          progressFill.style.width = pct + '%';
+          progressLabel.textContent = `Uploading… ${pct}%`;
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status === 200) {
+          progressFill.style.width = '90%';
+          progressLabel.textContent = 'Extracting audio…';
+
+          // Small delay to show extraction step visually
+          setTimeout(() => {
+            progressFill.style.width = '100%';
+            progressLabel.textContent = 'Done!';
+            const data = JSON.parse(xhr.responseText);
+            jobId = data.job_id;
+            setTimeout(() => {
+              document.getElementById('filename-input').value = suggestedName;
+              showStep('rename');
+            }, 400);
+          }, 600);
+        } else {
+          let msg = 'Upload failed.';
+          try { msg = JSON.parse(xhr.responseText).error || msg; } catch {}
+          showError(uploadError, msg);
+          uploadBtn.disabled = false;
+          progressWrap.style.display = 'none';
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        showError(uploadError, 'Network error. Please try again.');
+        uploadBtn.disabled = false;
+        progressWrap.style.display = 'none';
+      });
+
+      xhr.send(formData);
+    });
+
+    // ── Rename step ──────────────────────────────────────────────────────────
+    const filenameInput = document.getElementById('filename-input');
+    const confirmNameBtn = document.getElementById('confirm-name-btn');
+    const renameError = document.getElementById('rename-error');
+
+    confirmNameBtn.addEventListener('click', () => {
+      const name = filenameInput.value.trim();
+      if (!name) {
+        showError(renameError, 'Please enter a file name.');
+        return;
+      }
+      renameError.style.display = 'none';
+
+      const displayName = name.endsWith('.m4a') ? name : name + '.m4a';
+      const url = `/download/${jobId}?filename=${encodeURIComponent(name)}`;
+
+      document.getElementById('download-link').href = url;
+      document.getElementById('download-link').setAttribute('download', displayName);
+      document.getElementById('download-sub').textContent = displayName;
+      showStep('download');
+    });
+
+    filenameInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') confirmNameBtn.click();
+    });
+
+    document.getElementById('rename-back-btn').addEventListener('click', resetAll);
+
+    // ── Download step ────────────────────────────────────────────────────────
+    document.getElementById('download-back-btn').addEventListener('click', resetAll);
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function showError(el, msg) {
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
+    function resetAll() {
+      selectedFile = null;
+      jobId = null;
+      suggestedName = '';
+      fileNameEl.textContent = '';
+      fileInput.value = '';
+      uploadBtn.disabled = true;
+      progressWrap.style.display = 'none';
+      progressFill.style.width = '0%';
+      uploadError.style.display = 'none';
+      renameError.style.display = 'none';
+      showStep('upload');
+    }
+  </script>
+</body>
+</html>

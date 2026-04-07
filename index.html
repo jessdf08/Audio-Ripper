@@ -4,10 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Ripper</title>
-
-  <!-- ffmpeg.wasm v0.11 — works without SharedArrayBuffer or special headers -->
   <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
-
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -38,59 +35,79 @@
     .step { display: none; }
     .step.active { display: block; }
 
-    .drop-zone {
+    /* ── Pick step ─────────────────────────────────────────────────────────── */
+    .pick-zone {
       border: 2px dashed #3b3f5c;
       border-radius: 12px;
-      padding: 2.5rem 1rem;
+      padding: 3rem 1rem;
       text-align: center;
       cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;
+      transition: border-color .2s, background .2s;
+      position: relative;
     }
-    .drop-zone:hover, .drop-zone.drag-over {
-      border-color: #7c3aed;
-      background: rgba(124,58,237,0.06);
+    .pick-zone:hover { border-color: #7c3aed; background: rgba(124,58,237,.06); }
+    .pick-zone input[type="file"] {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      opacity: 0; cursor: pointer;
     }
-    .drop-zone input[type="file"] { display: none; }
-    .drop-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
-    .drop-label { font-size: 1rem; color: #94a3b8; }
-    .drop-label span { color: #a78bfa; font-weight: 600; cursor: pointer; text-decoration: underline; }
-    .drop-hint { font-size: 0.78rem; color: #475569; margin-top: 0.5rem; }
-    .selected-file { margin-top: 1rem; font-size: 0.85rem; color: #7dd3fc; word-break: break-all; }
+    .pick-icon { font-size: 2.5rem; margin-bottom: .75rem; pointer-events: none; }
+    .pick-label { font-size: 1rem; color: #94a3b8; pointer-events: none; }
+    .pick-label strong { color: #a78bfa; }
+    .pick-hint { font-size: .78rem; color: #475569; margin-top: .5rem; pointer-events: none; }
 
-    .btn {
-      display: block;
-      width: 100%;
-      padding: 0.65rem 1.4rem;
-      border-radius: 8px;
-      font-size: 0.95rem;
-      font-weight: 600;
-      cursor: pointer;
-      border: none;
-      margin-top: 1.25rem;
-      transition: opacity 0.15s, transform 0.1s;
+    /* ── Progress ──────────────────────────────────────────────────────────── */
+    .queue-badge {
+      display: inline-block;
+      background: #252840;
+      border-radius: 999px;
+      padding: .25rem .75rem;
+      font-size: .78rem;
+      color: #7dd3fc;
+      margin-bottom: 1.25rem;
     }
-    .btn:active { transform: scale(0.97); }
-    .btn-primary { background: #7c3aed; color: #fff; }
-    .btn-primary:hover { opacity: 0.88; }
-    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
-    .btn-secondary {
-      background: transparent; color: #94a3b8;
-      border: 1px solid #3b3f5c; margin-top: 0.75rem;
+    .file-label {
+      font-size: .85rem;
+      color: #94a3b8;
+      margin-bottom: .75rem;
+      word-break: break-all;
     }
-    .btn-secondary:hover { background: #1e2235; }
-
-    .progress-wrap { margin-top: 1.25rem; }
-    .progress-bar-bg { background: #252840; border-radius: 999px; height: 8px; overflow: hidden; }
-    .progress-bar-fill {
+    .bar-bg { background: #252840; border-radius: 999px; height: 8px; overflow: hidden; }
+    .bar-fill {
       height: 100%;
-      background: linear-gradient(90deg, #7c3aed, #a78bfa);
+      background: linear-gradient(90deg,#7c3aed,#a78bfa);
       border-radius: 999px;
       width: 0%;
-      transition: width 0.3s ease;
+      transition: width .3s ease;
     }
-    .progress-label { font-size: 0.82rem; color: #64748b; margin-top: 0.5rem; text-align: center; }
+    .bar-label {
+      font-size: .82rem; color: #64748b;
+      margin-top: .5rem; text-align: center;
+    }
+    .privacy-note {
+      font-size: .75rem; color: #475569;
+      text-align: center; margin-top: 1rem;
+    }
 
-    label.field-label { display: block; font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.5rem; }
+    /* ── Name / Download ───────────────────────────────────────────────────── */
+    .section-icon { font-size: 3rem; text-align: center; margin-bottom: .75rem; }
+    .section-title {
+      text-align: center; font-weight: 600; font-size: 1rem; margin-bottom: .4rem;
+    }
+    .section-sub {
+      text-align: center; color: #64748b; font-size: .85rem; margin-bottom: 1.25rem;
+    }
+    .next-badge {
+      text-align: center;
+      background: rgba(124,58,237,.12);
+      border: 1px solid rgba(124,58,237,.25);
+      border-radius: 8px;
+      padding: .6rem;
+      font-size: .8rem;
+      color: #c4b5fd;
+      margin-top: 1rem;
+    }
+
+    label.field-label { display: block; font-size: .85rem; color: #94a3b8; margin-bottom: .5rem; }
     .input-group {
       display: flex; align-items: center;
       border: 1px solid #3b3f5c; border-radius: 8px;
@@ -98,38 +115,60 @@
     }
     .input-group input {
       flex: 1; background: transparent; border: none; outline: none;
-      padding: 0.65rem 0.85rem; color: #e2e8f0; font-size: 0.95rem;
+      padding: .65rem .85rem; color: #e2e8f0; font-size: .95rem;
     }
     .input-group .suffix {
-      padding: 0.65rem 0.85rem; color: #64748b; font-size: 0.9rem;
+      padding: .65rem .85rem; color: #64748b; font-size: .9rem;
       border-left: 1px solid #3b3f5c; background: #1e2235; user-select: none;
     }
-
-    .success-icon { font-size: 3rem; text-align: center; margin-bottom: 0.75rem; }
-    .success-msg { text-align: center; color: #86efac; font-weight: 600; font-size: 1rem; margin-bottom: 0.5rem; }
-    .success-sub { text-align: center; color: #64748b; font-size: 0.85rem; margin-bottom: 1.5rem; }
 
     .btn-download {
       display: block; text-align: center; text-decoration: none;
       background: #059669; color: #fff; width: 100%;
-      padding: 0.75rem; border-radius: 10px; border: none;
+      padding: .75rem; border-radius: 10px;
       font-size: 1rem; font-weight: 700; cursor: pointer;
-      transition: opacity 0.15s;
+      transition: opacity .15s; margin-top: 1rem;
     }
-    .btn-download:hover { opacity: 0.88; }
+    .btn-download:hover { opacity: .88; }
 
-    .error-box {
-      background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3);
-      border-radius: 8px; padding: 0.75rem 1rem; color: #fca5a5;
-      font-size: 0.85rem; margin-top: 1rem; display: none;
+    .btn {
+      display: block; width: 100%;
+      padding: .65rem 1.4rem; border-radius: 8px;
+      font-size: .95rem; font-weight: 600;
+      cursor: pointer; border: none;
+      transition: opacity .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-primary { background: #7c3aed; color: #fff; margin-top: 1rem; }
+    .btn-primary:hover { opacity: .88; }
+    .btn-outline {
+      background: transparent; color: #94a3b8;
+      border: 1px solid #3b3f5c; margin-top: .75rem;
+    }
+    .btn-outline:hover { background: #1e2235; }
+
+    /* ── Done ──────────────────────────────────────────────────────────────── */
+    .done-list { list-style: none; margin-top: 1rem; }
+    .done-list li {
+      background: #252840; border-radius: 8px;
+      padding: .6rem .85rem; margin-bottom: .5rem;
+      font-size: .85rem; color: #86efac;
     }
 
+    /* ── Spinner ───────────────────────────────────────────────────────────── */
     .spinner {
-      width: 40px; height: 40px; border: 3px solid #2d3149;
-      border-top-color: #7c3aed; border-radius: 50%;
-      animation: spin 0.8s linear infinite; margin: 0 auto 1rem;
+      width: 36px; height: 36px;
+      border: 3px solid #2d3149; border-top-color: #7c3aed;
+      border-radius: 50%; animation: spin .8s linear infinite;
+      margin: 0 auto 1rem;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-box {
+      background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3);
+      border-radius: 8px; padding: .75rem 1rem; color: #fca5a5;
+      font-size: .85rem; margin-top: 1rem;
+    }
   </style>
 </head>
 <body>
@@ -137,61 +176,57 @@
   <h1>Audio Ripper</h1>
   <p class="subtitle">Extract lossless audio from any video as an .m4a — entirely in your browser.</p>
 
-  <!-- Loading -->
+  <!-- Loading engine -->
   <div class="step active" id="step-loading">
     <div style="text-align:center;padding:2rem 0">
       <div class="spinner"></div>
       <p style="color:#94a3b8">Loading audio engine…</p>
-      <p style="color:#475569;font-size:0.8rem;margin-top:0.4rem">First load downloads ~25 MB — give it a moment</p>
+      <p style="color:#475569;font-size:.8rem;margin-top:.4rem">First load downloads ~25 MB</p>
     </div>
   </div>
 
-  <!-- Upload -->
-  <div class="step" id="step-upload">
-    <div class="drop-zone" id="drop-zone">
-      <input type="file" id="file-input" accept="video/*,audio/*" />
-      <div class="drop-icon">🎬</div>
-      <p class="drop-label">Drag &amp; drop your video, or <span id="browse-link">browse</span></p>
-      <p class="drop-hint">MP4, MOV, MKV, AVI, WebM and more</p>
-      <p class="selected-file" id="file-name"></p>
+  <!-- Pick files -->
+  <div class="step" id="step-pick">
+    <div class="pick-zone" id="pick-zone">
+      <input type="file" id="file-input" accept="video/*,audio/*" multiple />
+      <div class="pick-icon">🎬</div>
+      <p class="pick-label">Tap to select <strong>one or more videos</strong></p>
+      <p class="pick-hint">MP4, MOV, MKV, AVI, WebM · Processing starts immediately</p>
     </div>
-    <button class="btn btn-primary" id="extract-btn" disabled>Extract Audio</button>
-    <div class="error-box" id="upload-error"></div>
   </div>
 
   <!-- Processing -->
   <div class="step" id="step-processing">
-    <div class="progress-wrap">
-      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-fill"></div></div>
-      <p class="progress-label" id="progress-label">Processing…</p>
-    </div>
-    <p style="color:#475569;font-size:0.78rem;text-align:center;margin-top:1rem">
-      Everything happens on your device — your video is never uploaded.
-    </p>
+    <div class="queue-badge" id="queue-badge">File 1 of 1</div>
+    <p class="file-label" id="proc-filename"></p>
+    <div class="bar-bg"><div class="bar-fill" id="bar-fill"></div></div>
+    <p class="bar-label" id="bar-label">Reading file…</p>
+    <p class="privacy-note">Everything happens on your device — nothing is uploaded.</p>
   </div>
 
-  <!-- Rename -->
-  <div class="step" id="step-rename">
-    <div class="success-icon">🎵</div>
-    <p class="success-msg">Audio extracted!</p>
-    <p class="success-sub">Give your file a name before downloading.</p>
+  <!-- Name & download -->
+  <div class="step" id="step-name">
+    <div class="section-icon">🎵</div>
+    <p class="section-title" id="name-title">Audio extracted!</p>
+    <p class="section-sub" id="name-sub"></p>
+
     <label class="field-label" for="filename-input">File name</label>
     <div class="input-group">
       <input type="text" id="filename-input" placeholder="my-audio" autocomplete="off" />
       <span class="suffix">.m4a</span>
     </div>
-    <button class="btn btn-primary" id="confirm-name-btn">Get Download Link</button>
-    <button class="btn btn-secondary" id="rename-back-btn">Start over</button>
-    <div class="error-box" id="rename-error"></div>
+
+    <a class="btn-download" id="download-btn" href="#">⬇&nbsp; Download .m4a</a>
+    <button class="btn btn-primary" id="next-btn" style="display:none">Next file →</button>
+    <div class="next-badge" id="next-badge" style="display:none"></div>
   </div>
 
-  <!-- Download -->
-  <div class="step" id="step-download">
-    <div class="success-icon">✅</div>
-    <p class="success-msg">Your file is ready!</p>
-    <p class="success-sub" id="download-sub"></p>
-    <a class="btn-download" id="download-link" href="#">⬇&nbsp; Download .m4a</a>
-    <button class="btn btn-secondary" id="download-back-btn" style="margin-top:1rem">Convert another video</button>
+  <!-- All done -->
+  <div class="step" id="step-done">
+    <div class="section-icon">✅</div>
+    <p class="section-title" style="color:#86efac">All done!</p>
+    <p class="section-sub" id="done-sub"></p>
+    <button class="btn btn-outline" id="restart-btn" style="margin-top:1.5rem">Convert more videos</button>
   </div>
 </div>
 
@@ -203,135 +238,155 @@ const ffmpeg = createFFmpeg({
   corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
   progress: ({ ratio }) => {
     const pct = Math.min(Math.round(ratio * 100), 99);
-    document.getElementById('progress-fill').style.width = pct + '%';
-    document.getElementById('progress-label').textContent = `Processing… ${pct}%`;
+    document.getElementById('bar-fill').style.width = pct + '%';
+    document.getElementById('bar-label').textContent = `Processing… ${pct}%`;
   },
 });
 
-let selectedFile = null;
-let outputBlob   = null;
-let suggestedName = '';
+// ── State ─────────────────────────────────────────────────────────────────────
+let queue = [];       // File objects to process
+let queueIndex = 0;   // Which file we're on
+let currentBlob = null;
+let resolveNameStep = null; // resolves when user has downloaded current file
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function showStep(id) {
   document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
   document.getElementById(id).classList.add('active');
 }
-function showError(el, msg) { el.textContent = msg; el.style.display = 'block'; }
 
-// ── Load engine ───────────────────────────────────────────────────────────────
+// ── Boot ──────────────────────────────────────────────────────────────────────
 ffmpeg.load().then(() => {
-  showStep('step-upload');
+  showStep('step-pick');
 }).catch(e => {
   document.getElementById('step-loading').innerHTML =
-    `<div class="error-box" style="display:block">
-       Failed to load audio engine: ${e.message || e}<br>Try refreshing the page.
-     </div>`;
+    `<div class="error-box">Failed to load audio engine: ${e.message || e}<br>Try refreshing.</div>`;
 });
 
-// ── Upload step ───────────────────────────────────────────────────────────────
-const dropZone    = document.getElementById('drop-zone');
-const fileInput   = document.getElementById('file-input');
-const browseLink  = document.getElementById('browse-link');
-const fileNameEl  = document.getElementById('file-name');
-const extractBtn  = document.getElementById('extract-btn');
-const uploadError = document.getElementById('upload-error');
-
-browseLink.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('click', e => { if (e.target !== browseLink) fileInput.click(); });
-fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
-
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault(); dropZone.classList.remove('drag-over');
-  if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
+// ── File selection → immediately begin queue ──────────────────────────────────
+document.getElementById('file-input').addEventListener('change', function () {
+  if (!this.files.length) return;
+  queue = Array.from(this.files);
+  queueIndex = 0;
+  // Reset input so the same file can be re-selected later
+  this.value = '';
+  runQueue();
 });
 
-function setFile(file) {
-  selectedFile = file;
-  fileNameEl.textContent = file.name;
-  extractBtn.disabled = false;
-  uploadError.style.display = 'none';
-  suggestedName = file.name.replace(/\.[^.]+$/, '') || 'audio';
-}
+// ── Queue runner ──────────────────────────────────────────────────────────────
+async function runQueue() {
+  for (queueIndex = 0; queueIndex < queue.length; queueIndex++) {
+    const file = queue[queueIndex];
+    const total = queue.length;
+    const num   = queueIndex + 1;
 
-// ── Extract ───────────────────────────────────────────────────────────────────
-extractBtn.addEventListener('click', async () => {
-  if (!selectedFile) return;
-  uploadError.style.display = 'none';
-  showStep('step-processing');
+    // Show processing UI
+    document.getElementById('queue-badge').textContent   = `File ${num} of ${total}`;
+    document.getElementById('proc-filename').textContent = file.name;
+    document.getElementById('bar-fill').style.width      = '0%';
+    document.getElementById('bar-label').textContent     = 'Reading file…';
+    showStep('step-processing');
 
-  document.getElementById('progress-label').textContent = 'Reading file…';
-
-  try {
-    const ext        = (selectedFile.name.split('.').pop() || 'mp4').toLowerCase();
-    const inputName  = 'input.' + ext;
-    const outputName = 'output.m4a';
-
-    ffmpeg.FS('writeFile', inputName, await fetchFile(selectedFile));
-
-    // Try lossless copy first; fall back to high-quality AAC
-    let ok = false;
+    let blob;
     try {
-      await ffmpeg.run('-i', inputName, '-vn', '-c:a', 'copy', outputName);
-      ok = true;
-    } catch (_) {}
-
-    if (!ok) {
-      document.getElementById('progress-label').textContent = 'Re-encoding to AAC…';
-      await ffmpeg.run('-i', inputName, '-vn', '-c:a', 'aac', '-b:a', '320k', outputName);
+      blob = await extractAudio(file);
+    } catch (e) {
+      // Skip failed file, show brief error then continue
+      document.getElementById('bar-label').textContent = `Error: ${e.message || 'failed'} — skipping…`;
+      await delay(2000);
+      continue;
     }
 
-    const data = ffmpeg.FS('readFile', outputName);
-    outputBlob = new Blob([data.buffer], { type: 'audio/mp4' });
-
-    ffmpeg.FS('unlink', inputName);
-    ffmpeg.FS('unlink', outputName);
-
-    document.getElementById('progress-fill').style.width = '100%';
-    document.getElementById('progress-label').textContent = 'Done!';
-    document.getElementById('filename-input').value = suggestedName;
-    setTimeout(() => showStep('step-rename'), 300);
-
-  } catch (e) {
-    showStep('step-upload');
-    showError(uploadError, e.message || 'Extraction failed. Try a different file.');
-    extractBtn.disabled = false;
+    // Show name/download UI and wait for user to finish
+    await promptDownload(blob, file.name, num, total);
   }
-});
 
-// ── Rename step ───────────────────────────────────────────────────────────────
-const filenameInput  = document.getElementById('filename-input');
-const confirmNameBtn = document.getElementById('confirm-name-btn');
-const renameError    = document.getElementById('rename-error');
-
-confirmNameBtn.addEventListener('click', () => {
-  const name = filenameInput.value.trim();
-  if (!name) { showError(renameError, 'Please enter a file name.'); return; }
-  renameError.style.display = 'none';
-
-  const displayName = name.endsWith('.m4a') ? name : name + '.m4a';
-  const url  = URL.createObjectURL(outputBlob);
-  const link = document.getElementById('download-link');
-  link.href = url;
-  link.setAttribute('download', displayName);
-  document.getElementById('download-sub').textContent = displayName;
-  showStep('step-download');
-});
-
-filenameInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmNameBtn.click(); });
-document.getElementById('rename-back-btn').addEventListener('click', resetAll);
-document.getElementById('download-back-btn').addEventListener('click', resetAll);
-
-function resetAll() {
-  selectedFile = null; outputBlob = null; suggestedName = '';
-  fileNameEl.textContent = ''; fileInput.value = '';
-  extractBtn.disabled = true;
-  uploadError.style.display = 'none';
-  renameError.style.display = 'none';
-  document.getElementById('progress-fill').style.width = '0%';
-  showStep('step-upload');
+  // All done
+  const count = queue.length;
+  document.getElementById('done-sub').textContent =
+    `${count} file${count !== 1 ? 's' : ''} extracted successfully.`;
+  showStep('step-done');
 }
+
+// ── Extract audio from one file ───────────────────────────────────────────────
+async function extractAudio(file) {
+  const ext    = (file.name.split('.').pop() || 'mp4').toLowerCase();
+  const inName  = 'input.' + ext;
+  const outName = 'output.m4a';
+
+  ffmpeg.FS('writeFile', inName, await fetchFile(file));
+
+  // Try lossless copy first, fall back to high-quality AAC
+  let ok = false;
+  try {
+    await ffmpeg.run('-i', inName, '-vn', '-c:a', 'copy', outName);
+    ok = true;
+  } catch (_) {}
+
+  if (!ok) {
+    document.getElementById('bar-label').textContent = 'Re-encoding to AAC…';
+    await ffmpeg.run('-i', inName, '-vn', '-c:a', 'aac', '-b:a', '320k', outName);
+  }
+
+  const data = ffmpeg.FS('readFile', outName);
+  ffmpeg.FS('unlink', inName);
+  ffmpeg.FS('unlink', outName);
+
+  return new Blob([data.buffer], { type: 'audio/mp4' });
+}
+
+// ── Prompt user to name and download one file ─────────────────────────────────
+function promptDownload(blob, originalName, num, total) {
+  return new Promise(resolve => {
+    resolveNameStep = resolve;
+    currentBlob = blob;
+
+    const suggested = originalName.replace(/\.[^.]+$/, '') || 'audio';
+    const hasMore   = num < total;
+
+    document.getElementById('filename-input').value = suggested;
+    document.getElementById('name-sub').textContent  =
+      `From: ${originalName}`;
+
+    // Download button wires up fresh each time
+    const dlBtn = document.getElementById('download-btn');
+    dlBtn.onclick = () => {
+      const name = (document.getElementById('filename-input').value.trim() || suggested);
+      const displayName = name.endsWith('.m4a') ? name : name + '.m4a';
+      const url = URL.createObjectURL(currentBlob);
+      dlBtn.href = url;
+      dlBtn.setAttribute('download', displayName);
+      // Show "Next" button or auto-resolve if last file
+      if (hasMore) {
+        document.getElementById('next-btn').style.display = 'block';
+        document.getElementById('next-badge').style.display = 'block';
+        document.getElementById('next-badge').textContent =
+          `${total - num} more file${total - num !== 1 ? 's' : ''} in queue`;
+      } else {
+        setTimeout(() => resolve(), 800); // slight delay so download starts
+      }
+    };
+
+    const nextBtn = document.getElementById('next-btn');
+    nextBtn.style.display = 'none';
+    nextBtn.onclick = () => {
+      document.getElementById('next-btn').style.display = 'none';
+      document.getElementById('next-badge').style.display = 'none';
+      resolve();
+    };
+
+    showStep('step-name');
+  });
+}
+
+// ── Restart ───────────────────────────────────────────────────────────────────
+document.getElementById('restart-btn').addEventListener('click', () => {
+  queue = []; queueIndex = 0; currentBlob = null;
+  showStep('step-pick');
+});
+
+// ── Util ──────────────────────────────────────────────────────────────────────
+const delay = ms => new Promise(r => setTimeout(r, ms));
 </script>
 </body>
 </html>

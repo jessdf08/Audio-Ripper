@@ -4,6 +4,27 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Ripper</title>
+
+  <!-- Register service worker BEFORE anything else so COOP+COEP headers are
+       active on reload, enabling SharedArrayBuffer (required by ffmpeg.wasm). -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./coi-serviceworker.js').then(reg => {
+        // If the SW just installed for the first time, wait for it to activate
+        // then reload so this page gets the cross-origin isolation headers.
+        const sw = reg.installing || reg.waiting;
+        if (sw) {
+          sw.addEventListener('statechange', e => {
+            if (e.target.state === 'activated') location.reload();
+          });
+        } else if (!navigator.serviceWorker.controller) {
+          // SW was already registered but isn't controlling yet
+          location.reload();
+        }
+      });
+    }
+  </script>
+
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -119,11 +140,6 @@
       font-size: 0.85rem; margin-top: 1rem; display: none;
     }
 
-    .loading-overlay {
-      display: none; text-align: center;
-      padding: 2rem 0;
-    }
-    .loading-overlay.active { display: block; }
     .spinner {
       width: 40px; height: 40px; border: 3px solid #2d3149;
       border-top-color: #7c3aed; border-radius: 50%;
@@ -137,12 +153,12 @@
   <h1>Audio Ripper</h1>
   <p class="subtitle">Extract lossless audio from any video as an .m4a — entirely in your browser.</p>
 
-  <!-- Step 0: FFmpeg loading -->
+  <!-- Step 0: Loading -->
   <div class="step active" id="step-loading">
-    <div class="loading-overlay active">
+    <div style="text-align:center;padding:2rem 0">
       <div class="spinner"></div>
-      <p style="color:#94a3b8">Loading audio engine…</p>
-      <p style="color:#475569;font-size:0.8rem;margin-top:0.4rem">First load may take a few seconds</p>
+      <p style="color:#94a3b8" id="loading-msg">Loading audio engine…</p>
+      <p style="color:#475569;font-size:0.8rem;margin-top:0.4rem">First load downloads ~30 MB — give it a moment</p>
     </div>
   </div>
 
@@ -159,7 +175,7 @@
     <div class="error-box" id="upload-error"></div>
   </div>
 
-  <!-- Step 1b: Processing -->
+  <!-- Step 2: Processing -->
   <div class="step" id="step-processing">
     <div class="progress-wrap">
       <div class="progress-bar-bg"><div class="progress-bar-fill" id="progress-fill"></div></div>
@@ -170,7 +186,7 @@
     </p>
   </div>
 
-  <!-- Step 2: Rename -->
+  <!-- Step 3: Rename -->
   <div class="step" id="step-rename">
     <div class="success-icon">🎵</div>
     <p class="success-msg">Audio extracted!</p>
@@ -185,7 +201,7 @@
     <div class="error-box" id="rename-error"></div>
   </div>
 
-  <!-- Step 3: Download -->
+  <!-- Step 4: Download -->
   <div class="step" id="step-download">
     <div class="success-icon">✅</div>
     <p class="success-msg">Your file is ready!</p>
@@ -199,35 +215,48 @@
 import { FFmpeg } from 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/index.js';
 import { fetchFile, toBlobURL } from 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/esm/index.js';
 
-// ── State ─────────────────────────────────────────────────────────────────────
 const ffmpeg = new FFmpeg();
 let selectedFile = null;
 let outputBlob = null;
 let suggestedName = '';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function showStep(id) {
   document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
   document.getElementById(id).classList.add('active');
 }
-
-function showError(el, msg) {
-  el.textContent = msg;
-  el.style.display = 'block';
-}
+function showError(el, msg) { el.textContent = msg; el.style.display = 'block'; }
 
 // ── Load FFmpeg ───────────────────────────────────────────────────────────────
-try {
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+// Use multi-threaded core now that COOP+COEP are set by the service worker.
+const MT_BASE = 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm';
+const ST_BASE = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+
+async function loadFFmpeg() {
+  // Try multi-threaded first (faster, needs SharedArrayBuffer)
+  if (crossOriginIsolated) {
+    try {
+      await ffmpeg.load({
+        coreURL:   await toBlobURL(`${MT_BASE}/ffmpeg-core.js`,        'text/javascript'),
+        wasmURL:   await toBlobURL(`${MT_BASE}/ffmpeg-core.wasm`,      'application/wasm'),
+        workerURL: await toBlobURL(`${MT_BASE}/ffmpeg-core.worker.js`, 'text/javascript'),
+      });
+      return;
+    } catch (_) { /* fall through to single-threaded */ }
+  }
+  // Single-threaded fallback
   await ffmpeg.load({
-    coreURL:   await toBlobURL(`${baseURL}/ffmpeg-core.js`,   'text/javascript'),
-    wasmURL:   await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    coreURL: await toBlobURL(`${ST_BASE}/ffmpeg-core.js`,   'text/javascript'),
+    wasmURL: await toBlobURL(`${ST_BASE}/ffmpeg-core.wasm`, 'application/wasm'),
   });
+}
+
+try {
+  await loadFFmpeg();
   showStep('step-upload');
 } catch (e) {
-  document.getElementById('step-loading').innerHTML =
-    `<div class="error-box" style="display:block">Failed to load audio engine: ${e.message}<br>
-     Try refreshing. Requires a modern browser with WebAssembly support.</div>`;
+  document.getElementById('loading-msg').textContent = 'Failed to load audio engine.';
+  document.getElementById('step-loading').insertAdjacentHTML('beforeend',
+    `<div class="error-box" style="display:block;margin-top:1rem">${e.message}<br>Try refreshing the page.</div>`);
 }
 
 // ── Upload step ───────────────────────────────────────────────────────────────
@@ -241,12 +270,10 @@ const uploadError = document.getElementById('upload-error');
 browseLink.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('click', e => { if (e.target !== browseLink) fileInput.click(); });
 fileInput.addEventListener('change', () => { if (fileInput.files[0]) setFile(fileInput.files[0]); });
-
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
 dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('drag-over');
+  e.preventDefault(); dropZone.classList.remove('drag-over');
   if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]);
 });
 
@@ -281,27 +308,21 @@ extractBtn.addEventListener('click', async () => {
     progressLabel.textContent = 'Reading file…';
     await ffmpeg.writeFile(inputName, await fetchFile(selectedFile));
 
-    // Try lossless copy first
+    // Try lossless copy first, fall back to high-quality AAC
     let ok = await ffmpeg.exec(['-i', inputName, '-vn', '-c:a', 'copy', outputName]) === 0;
-
     if (!ok) {
-      // Fallback: high-quality AAC re-encode
       progressLabel.textContent = 'Re-encoding to AAC…';
       ok = await ffmpeg.exec(['-i', inputName, '-vn', '-c:a', 'aac', '-b:a', '320k', outputName]) === 0;
     }
-
     if (!ok) throw new Error('FFmpeg could not extract audio from this file.');
 
     const data = await ffmpeg.readFile(outputName);
     outputBlob = new Blob([data.buffer], { type: 'audio/mp4' });
-
-    // Clean up virtual FS
     await ffmpeg.deleteFile(inputName);
     await ffmpeg.deleteFile(outputName);
 
     progressFill.style.width = '100%';
     progressLabel.textContent = 'Done!';
-
     document.getElementById('filename-input').value = suggestedName;
     setTimeout(() => showStep('step-rename'), 300);
 
@@ -321,7 +342,6 @@ confirmNameBtn.addEventListener('click', () => {
   const name = filenameInput.value.trim();
   if (!name) { showError(renameError, 'Please enter a file name.'); return; }
   renameError.style.display = 'none';
-
   const displayName = name.endsWith('.m4a') ? name : name + '.m4a';
   const url = URL.createObjectURL(outputBlob);
   const link = document.getElementById('download-link');
@@ -333,16 +353,11 @@ confirmNameBtn.addEventListener('click', () => {
 
 filenameInput.addEventListener('keydown', e => { if (e.key === 'Enter') confirmNameBtn.click(); });
 document.getElementById('rename-back-btn').addEventListener('click', resetAll);
-
-// ── Download step ─────────────────────────────────────────────────────────────
 document.getElementById('download-back-btn').addEventListener('click', resetAll);
 
 function resetAll() {
-  selectedFile = null;
-  outputBlob = null;
-  suggestedName = '';
-  fileNameEl.textContent = '';
-  fileInput.value = '';
+  selectedFile = null; outputBlob = null; suggestedName = '';
+  fileNameEl.textContent = ''; fileInput.value = '';
   extractBtn.disabled = true;
   uploadError.style.display = 'none';
   renameError.style.display = 'none';

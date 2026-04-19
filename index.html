@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Ripper</title>
-  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+  <script src="./ffmpeg.js"></script>
+  <script src="./ffmpeg-util.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -341,6 +342,7 @@
 
 <script>
 const { FFmpeg } = FFmpegWASM;
+const { toBlobURL } = FFmpegUtil;
 const ffmpeg = new FFmpeg();
 
 ffmpeg.on('progress', ({ progress }) => {
@@ -423,15 +425,19 @@ function cleanupSplitFS() {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-ffmpeg.load({
-  coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-  wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
-}).then(() => {
-  showStep('step-pick');
-}).catch(e => {
-  document.getElementById('step-loading').innerHTML =
-    `<div class="error-box">Failed to load audio engine: ${e.message || e}<br>Try refreshing.</div>`;
-});
+(async () => {
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+  try {
+    await ffmpeg.load({
+      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+    });
+    showStep('step-pick');
+  } catch (e) {
+    document.getElementById('step-loading').innerHTML =
+      `<div class="error-box">Failed to load audio engine: ${e.message || e}<br>Try refreshing.</div>`;
+  }
+})();
 
 // ── Extract tab: File selection ───────────────────────────────────────────────
 document.getElementById('file-input').addEventListener('change', function () {

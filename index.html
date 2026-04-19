@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Ripper</title>
-  <script src="https://unpkg.com/coi-serviceworker@0.1.7/coi-serviceworker.min.js"></script>
+  <script>if (typeof SharedArrayBuffer === 'undefined') self.SharedArrayBuffer = ArrayBuffer;</script>
   <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -345,7 +345,7 @@ const { createFFmpeg, fetchFile } = FFmpeg;
 
 const ffmpeg = createFFmpeg({
   log: false,
-  corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+  corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js',
   progress: ({ ratio }) => {
     const pct = Math.min(Math.round(ratio * 100), 99);
     document.getElementById('bar-fill').style.width = pct + '%';

@@ -30,10 +30,34 @@
     }
 
     h1 { font-size: 1.6rem; font-weight: 700; color: #a78bfa; margin-bottom: 0.4rem; }
-    .subtitle { color: #64748b; font-size: 0.9rem; margin-bottom: 2rem; }
+    .subtitle { color: #64748b; font-size: 0.9rem; margin-bottom: 1.5rem; }
 
     .step { display: none; }
     .step.active { display: block; }
+
+    /* ── Tab bar ──────────────────────────────────────────────────────────────── */
+    .tab-bar {
+      display: none;
+      background: #252840;
+      border-radius: 10px;
+      padding: 4px;
+      gap: 4px;
+      margin-bottom: 1.5rem;
+    }
+    .tab-bar.visible { display: flex; }
+    .tab-btn {
+      flex: 1;
+      padding: .5rem;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
+      color: #64748b;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .tab-btn.active { background: #7c3aed; color: #fff; }
 
     /* ── Pick step ─────────────────────────────────────────────────────────── */
     .pick-zone {
@@ -140,7 +164,8 @@
     }
     .btn:active { transform: scale(.97); }
     .btn-primary { background: #7c3aed; color: #fff; margin-top: 1rem; }
-    .btn-primary:hover { opacity: .88; }
+    .btn-primary:hover:not(:disabled) { opacity: .88; }
+    .btn-primary:disabled { opacity: .45; cursor: not-allowed; transform: none; }
     .btn-outline {
       background: transparent; color: #94a3b8;
       border: 1px solid #3b3f5c; margin-top: .75rem;
@@ -169,12 +194,59 @@
       border-radius: 8px; padding: .75rem 1rem; color: #fca5a5;
       font-size: .85rem; margin-top: 1rem;
     }
+
+    /* ── Split Songs ───────────────────────────────────────────────────────── */
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      background: #252840;
+      border-radius: 8px;
+      padding: .6rem .85rem;
+      margin: 1rem 0 .5rem;
+    }
+    .slider-row label { font-size: .83rem; color: #94a3b8; white-space: nowrap; }
+    .slider-row input[type=range] { flex: 1; accent-color: #7c3aed; cursor: pointer; }
+    .gap-val { font-size: .83rem; color: #e2e8f0; width: 2.8rem; text-align: right; white-space: nowrap; }
+
+    .songs-list {
+      list-style: none;
+      margin: .5rem 0;
+      max-height: 220px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #3b3f5c transparent;
+    }
+    .song-item {
+      background: #252840;
+      border-radius: 8px;
+      padding: .55rem .85rem;
+      margin-bottom: .4rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: .5rem;
+    }
+    .song-num { font-weight: 600; color: #a78bfa; font-size: .88rem; white-space: nowrap; }
+    .song-time { font-size: .8rem; color: #94a3b8; }
+    .song-dur { font-size: .78rem; color: #475569; white-space: nowrap; }
+    .no-songs-msg {
+      text-align: center; color: #475569;
+      font-size: .85rem; padding: 1.5rem 0;
+      line-height: 1.6;
+    }
   </style>
 </head>
 <body>
 <div class="card">
   <h1>Audio Ripper</h1>
   <p class="subtitle">Extract lossless audio from any video as an .m4a — entirely in your browser.</p>
+
+  <!-- Tab bar (shown in pick/done states) -->
+  <div class="tab-bar" id="tab-bar">
+    <button class="tab-btn active" id="tab-extract-btn" onclick="switchTab('extract')">Extract</button>
+    <button class="tab-btn" id="tab-split-btn" onclick="switchTab('split')">Split Songs</button>
+  </div>
 
   <!-- Loading engine -->
   <div class="step active" id="step-loading">
@@ -185,9 +257,9 @@
     </div>
   </div>
 
-  <!-- Pick files -->
+  <!-- Pick files (Extract tab) -->
   <div class="step" id="step-pick">
-    <div class="pick-zone" id="pick-zone">
+    <div class="pick-zone">
       <input type="file" id="file-input" accept="video/*,audio/*" multiple />
       <div class="pick-icon">🎬</div>
       <p class="pick-label">Tap to select <strong>one or more videos</strong></p>
@@ -195,7 +267,44 @@
     </div>
   </div>
 
-  <!-- Processing -->
+  <!-- Pick file (Split Songs tab) -->
+  <div class="step" id="step-split-pick">
+    <div class="pick-zone">
+      <input type="file" id="split-file-input" accept="video/*,audio/*" />
+      <div class="pick-icon">🎵</div>
+      <p class="pick-label">Tap to select <strong>a screen recording</strong></p>
+      <p class="pick-hint">Detects silence gaps and splits into individual songs</p>
+    </div>
+  </div>
+
+  <!-- Analyzing (Split Songs) -->
+  <div class="step" id="step-analyzing">
+    <div style="text-align:center;padding:2rem 0">
+      <div class="spinner"></div>
+      <p style="color:#94a3b8;font-weight:600">Detecting song boundaries…</p>
+      <p id="analyzing-filename" style="color:#475569;font-size:.8rem;margin-top:.4rem;word-break:break-all"></p>
+    </div>
+    <p class="privacy-note">Everything happens on your device — nothing is uploaded.</p>
+  </div>
+
+  <!-- Songs preview (Split Songs) -->
+  <div class="step" id="step-songs">
+    <p class="section-title" id="songs-header">Songs detected</p>
+    <p class="section-sub" id="songs-source"></p>
+
+    <div class="slider-row">
+      <label for="gap-slider">Min gap</label>
+      <input type="range" id="gap-slider" min="0.5" max="4" step="0.5" value="1" />
+      <span class="gap-val" id="gap-label">1.0s</span>
+    </div>
+
+    <ul class="songs-list" id="songs-list"></ul>
+
+    <button class="btn btn-primary" id="extract-songs-btn">Extract songs</button>
+    <button class="btn btn-outline" id="songs-back-btn">← Back</button>
+  </div>
+
+  <!-- Processing (shared) -->
   <div class="step" id="step-processing">
     <div class="queue-badge" id="queue-badge">File 1 of 1</div>
     <p class="file-label" id="proc-filename"></p>
@@ -204,7 +313,7 @@
     <p class="privacy-note">Everything happens on your device — nothing is uploaded.</p>
   </div>
 
-  <!-- Name & download -->
+  <!-- Name & download (shared) -->
   <div class="step" id="step-name">
     <div class="section-icon">🎵</div>
     <p class="section-title" id="name-title">Audio extracted!</p>
@@ -221,7 +330,7 @@
     <div class="next-badge" id="next-badge" style="display:none"></div>
   </div>
 
-  <!-- All done -->
+  <!-- All done (shared) -->
   <div class="step" id="step-done">
     <div class="section-icon">✅</div>
     <p class="section-title" style="color:#86efac">All done!</p>
@@ -244,15 +353,76 @@ const ffmpeg = createFFmpeg({
 });
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let queue = [];       // File objects to process
-let queueIndex = 0;   // Which file we're on
+let queue = [];
+let queueIndex = 0;
 let currentBlob = null;
-let resolveNameStep = null; // resolves when user has downloaded current file
+let resolveNameStep = null;
+let currentTab = 'extract';
+
+// Split Songs state
+let splitFile = null;
+let splitInputName = null;
+let detectedSongs = [];
+let splitGap = 1.0;
+let reanalyzeTimeout = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function showStep(id) {
   document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  const tabVisible = ['step-pick', 'step-split-pick', 'step-done'].includes(id);
+  document.getElementById('tab-bar').classList.toggle('visible', tabVisible);
+}
+
+function formatTime(s) {
+  s = Math.max(0, s);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.floor(s % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  return `${m}:${String(sec).padStart(2,'0')}`;
+}
+
+function formatDuration(s) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  if (m === 0) return `${sec}s`;
+  if (sec === 0) return `${m}m`;
+  return `${m}m ${sec}s`;
+}
+
+function getAudioDuration(file) {
+  return new Promise(resolve => {
+    const url = URL.createObjectURL(file);
+    const audio = new Audio(url);
+    audio.onloadedmetadata = () => { URL.revokeObjectURL(url); resolve(audio.duration); };
+    audio.onerror = () => { URL.revokeObjectURL(url); resolve(0); };
+  });
+}
+
+const delay = ms => new Promise(r => setTimeout(r, ms));
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-extract-btn').classList.toggle('active', tab === 'extract');
+  document.getElementById('tab-split-btn').classList.toggle('active', tab === 'split');
+  if (tab === 'extract') {
+    cleanupSplitFS();
+    showStep('step-pick');
+  } else {
+    showStep('step-split-pick');
+  }
+}
+
+function cleanupSplitFS() {
+  clearTimeout(reanalyzeTimeout);
+  if (splitInputName) {
+    try { ffmpeg.FS('unlink', splitInputName); } catch (_) {}
+    splitInputName = null;
+  }
+  splitFile = null;
+  detectedSongs = [];
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -263,24 +433,22 @@ ffmpeg.load().then(() => {
     `<div class="error-box">Failed to load audio engine: ${e.message || e}<br>Try refreshing.</div>`;
 });
 
-// ── File selection → immediately begin queue ──────────────────────────────────
+// ── Extract tab: File selection ───────────────────────────────────────────────
 document.getElementById('file-input').addEventListener('change', function () {
   if (!this.files.length) return;
   queue = Array.from(this.files);
   queueIndex = 0;
-  // Reset input so the same file can be re-selected later
   this.value = '';
   runQueue();
 });
 
-// ── Queue runner ──────────────────────────────────────────────────────────────
+// ── Extract tab: Queue runner ─────────────────────────────────────────────────
 async function runQueue() {
   for (queueIndex = 0; queueIndex < queue.length; queueIndex++) {
     const file = queue[queueIndex];
     const total = queue.length;
     const num   = queueIndex + 1;
 
-    // Show processing UI
     document.getElementById('queue-badge').textContent   = `File ${num} of ${total}`;
     document.getElementById('proc-filename').textContent = file.name;
     document.getElementById('bar-fill').style.width      = '0%';
@@ -291,17 +459,14 @@ async function runQueue() {
     try {
       blob = await extractAudio(file);
     } catch (e) {
-      // Skip failed file, show brief error then continue
       document.getElementById('bar-label').textContent = `Error: ${e.message || 'failed'} — skipping…`;
       await delay(2000);
       continue;
     }
 
-    // Show name/download UI and wait for user to finish
     await promptDownload(blob, file.name, num, total);
   }
 
-  // All done
   const count = queue.length;
   document.getElementById('done-sub').textContent =
     `${count} file${count !== 1 ? 's' : ''} extracted successfully.`;
@@ -310,13 +475,12 @@ async function runQueue() {
 
 // ── Extract audio from one file ───────────────────────────────────────────────
 async function extractAudio(file) {
-  const ext    = (file.name.split('.').pop() || 'mp4').toLowerCase();
+  const ext     = (file.name.split('.').pop() || 'mp4').toLowerCase();
   const inName  = 'input.' + ext;
   const outName = 'output.m4a';
 
   ffmpeg.FS('writeFile', inName, await fetchFile(file));
 
-  // Try lossless copy first, fall back to high-quality AAC
   let ok = false;
   try {
     await ffmpeg.run('-i', inName, '-vn', '-c:a', 'copy', outName);
@@ -335,7 +499,211 @@ async function extractAudio(file) {
   return new Blob([data.buffer], { type: 'audio/mp4' });
 }
 
-// ── Prompt user to name and download one file ─────────────────────────────────
+// ── Split Songs: File selection ───────────────────────────────────────────────
+document.getElementById('split-file-input').addEventListener('change', async function () {
+  if (!this.files.length) return;
+  const file = this.files[0];
+  this.value = '';
+
+  cleanupSplitFS();
+  splitFile = file;
+
+  const ext = (file.name.split('.').pop() || 'mp4').toLowerCase();
+  splitInputName = 'split_input.' + ext;
+
+  showStep('step-analyzing');
+  document.getElementById('analyzing-filename').textContent = file.name;
+
+  ffmpeg.FS('writeFile', splitInputName, await fetchFile(file));
+
+  splitGap = parseFloat(document.getElementById('gap-slider').value);
+  await runAnalysis();
+});
+
+// ── Split Songs: Run silencedetect ────────────────────────────────────────────
+async function runAnalysis() {
+  showStep('step-analyzing');
+  document.getElementById('analyzing-filename').textContent = splitFile ? splitFile.name : '';
+
+  const logs = [];
+  ffmpeg.setLogger(({ message }) => logs.push(message));
+
+  try {
+    await ffmpeg.run(
+      '-i', splitInputName,
+      '-af', `silencedetect=noise=-35dB:d=${splitGap}`,
+      '-f', 'null', '-'
+    );
+  } catch (_) {}
+
+  ffmpeg.setLogger(() => {});
+
+  const duration = await getAudioDuration(splitFile);
+  detectedSongs = parseSilenceSegments(logs, duration);
+
+  showSongsPreview();
+}
+
+// ── Split Songs: Parse silence into song segments ─────────────────────────────
+function parseSilenceSegments(logs, duration) {
+  const events = [];
+
+  for (const line of logs) {
+    const s = line.match(/silence_start:\s*([\d.]+)/);
+    const e = line.match(/silence_end:\s*([\d.]+)/);
+    if (s) events.push({ type: 'start', t: parseFloat(s[1]) });
+    if (e) events.push({ type: 'end',   t: parseFloat(e[1]) });
+  }
+
+  events.sort((a, b) => a.t - b.t);
+
+  // If first event is silence_end, recording began with silence → first song starts after it
+  // If first event is silence_start (or no events), recording began with audio → starts at 0
+  let songStart = (events.length === 0 || events[0].type === 'start') ? 0 : null;
+
+  const songs = [];
+  for (const ev of events) {
+    if (ev.type === 'start') {
+      if (songStart !== null && ev.t - songStart > 15) {
+        songs.push({ start: songStart, end: ev.t });
+      }
+      songStart = null;
+    } else {
+      songStart = ev.t;
+    }
+  }
+
+  // Final segment after last silence end
+  if (songStart !== null && duration > 0 && duration - songStart > 15) {
+    songs.push({ start: songStart, end: duration });
+  }
+
+  return songs;
+}
+
+// ── Split Songs: Render preview ───────────────────────────────────────────────
+function showSongsPreview() {
+  const count = detectedSongs.length;
+
+  document.getElementById('songs-header').textContent =
+    count === 0 ? 'No songs detected' : `${count} song${count !== 1 ? 's' : ''} detected`;
+  document.getElementById('songs-source').textContent = splitFile ? splitFile.name : '';
+
+  const list = document.getElementById('songs-list');
+  list.innerHTML = '';
+
+  if (count === 0) {
+    list.innerHTML = '<div class="no-songs-msg">No segments longer than 15 s found.<br>Try reducing the Min gap slider.</div>';
+  } else {
+    detectedSongs.forEach((song, i) => {
+      const dur = song.end - song.start;
+      const li = document.createElement('li');
+      li.className = 'song-item';
+      li.innerHTML =
+        `<span class="song-num">Song ${i + 1}</span>` +
+        `<span class="song-time">${formatTime(song.start)} → ${formatTime(song.end)}</span>` +
+        `<span class="song-dur">${formatDuration(dur)}</span>`;
+      list.appendChild(li);
+    });
+  }
+
+  const btn = document.getElementById('extract-songs-btn');
+  btn.textContent = count === 0 ? 'No songs to extract' : `Extract ${count} song${count !== 1 ? 's' : ''}`;
+  btn.disabled = count === 0;
+
+  showStep('step-songs');
+}
+
+// ── Split Songs: Min gap slider ───────────────────────────────────────────────
+document.getElementById('gap-slider').addEventListener('input', function () {
+  splitGap = parseFloat(this.value);
+  document.getElementById('gap-label').textContent = splitGap.toFixed(1) + 's';
+  clearTimeout(reanalyzeTimeout);
+  if (!splitFile || !splitInputName) return;
+  reanalyzeTimeout = setTimeout(runAnalysis, 600);
+});
+
+// ── Split Songs: Back button ──────────────────────────────────────────────────
+document.getElementById('songs-back-btn').addEventListener('click', () => {
+  clearTimeout(reanalyzeTimeout);
+  cleanupSplitFS();
+  showStep('step-split-pick');
+});
+
+// ── Split Songs: Extract all songs ────────────────────────────────────────────
+document.getElementById('extract-songs-btn').addEventListener('click', extractSplitSongs);
+
+async function extractSplitSongs() {
+  const total = detectedSongs.length;
+  if (total === 0) return;
+
+  const baseName = splitFile.name.replace(/\.[^.]+$/, '');
+
+  for (let i = 0; i < total; i++) {
+    const num = i + 1;
+
+    document.getElementById('queue-badge').textContent   = `Song ${num} of ${total}`;
+    document.getElementById('proc-filename').textContent = `${baseName} — Song ${num}`;
+    document.getElementById('bar-fill').style.width      = '0%';
+    document.getElementById('bar-label').textContent     = 'Extracting…';
+    showStep('step-processing');
+
+    let blob;
+    try {
+      blob = await extractSegment(i);
+    } catch (e) {
+      document.getElementById('bar-label').textContent = `Error: ${e.message || 'failed'} — skipping…`;
+      await delay(2000);
+      continue;
+    }
+
+    await promptDownload(blob, `${baseName} - Song ${num}.m4a`, num, total);
+  }
+
+  try { ffmpeg.FS('unlink', splitInputName); } catch (_) {}
+  splitInputName = null;
+  splitFile = null;
+
+  document.getElementById('done-sub').textContent =
+    `${total} song${total !== 1 ? 's' : ''} extracted successfully.`;
+  showStep('step-done');
+}
+
+async function extractSegment(index) {
+  const song = detectedSongs[index];
+  const outName = `song_${index}.m4a`;
+  const dur = song.end - song.start;
+
+  let ok = false;
+  try {
+    await ffmpeg.run(
+      '-ss', String(song.start),
+      '-i', splitInputName,
+      '-t', String(dur),
+      '-vn', '-c:a', 'copy',
+      outName
+    );
+    ok = true;
+  } catch (_) {}
+
+  if (!ok) {
+    document.getElementById('bar-label').textContent = 'Re-encoding to AAC…';
+    await ffmpeg.run(
+      '-ss', String(song.start),
+      '-i', splitInputName,
+      '-t', String(dur),
+      '-vn', '-c:a', 'aac', '-b:a', '320k',
+      outName
+    );
+  }
+
+  const data = ffmpeg.FS('readFile', outName);
+  ffmpeg.FS('unlink', outName);
+
+  return new Blob([data.buffer], { type: 'audio/mp4' });
+}
+
+// ── Shared: Name and download one file ───────────────────────────────────────
 function promptDownload(blob, originalName, num, total) {
   return new Promise(resolve => {
     resolveNameStep = resolve;
@@ -345,10 +713,8 @@ function promptDownload(blob, originalName, num, total) {
     const hasMore   = num < total;
 
     document.getElementById('filename-input').value = suggested;
-    document.getElementById('name-sub').textContent  =
-      `From: ${originalName}`;
+    document.getElementById('name-sub').textContent  = `From: ${originalName}`;
 
-    // Download button wires up fresh each time
     const dlBtn = document.getElementById('download-btn');
     dlBtn.onclick = () => {
       const name = (document.getElementById('filename-input').value.trim() || suggested);
@@ -356,14 +722,13 @@ function promptDownload(blob, originalName, num, total) {
       const url = URL.createObjectURL(currentBlob);
       dlBtn.href = url;
       dlBtn.setAttribute('download', displayName);
-      // Show "Next" button or auto-resolve if last file
       if (hasMore) {
         document.getElementById('next-btn').style.display = 'block';
         document.getElementById('next-badge').style.display = 'block';
         document.getElementById('next-badge').textContent =
           `${total - num} more file${total - num !== 1 ? 's' : ''} in queue`;
       } else {
-        setTimeout(() => resolve(), 800); // slight delay so download starts
+        setTimeout(() => resolve(), 800);
       }
     };
 
@@ -382,11 +747,10 @@ function promptDownload(blob, originalName, num, total) {
 // ── Restart ───────────────────────────────────────────────────────────────────
 document.getElementById('restart-btn').addEventListener('click', () => {
   queue = []; queueIndex = 0; currentBlob = null;
-  showStep('step-pick');
+  cleanupSplitFS();
+  showStep(currentTab === 'split' ? 'step-split-pick' : 'step-pick');
 });
 
-// ── Util ──────────────────────────────────────────────────────────────────────
-const delay = ms => new Promise(r => setTimeout(r, ms));
 </script>
 </body>
 </html>

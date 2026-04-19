@@ -4,8 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Audio Ripper</title>
-  <script>if (typeof SharedArrayBuffer === 'undefined') self.SharedArrayBuffer = ArrayBuffer;</script>
-  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -341,16 +340,13 @@
 </div>
 
 <script>
-const { createFFmpeg, fetchFile } = FFmpeg;
+const { FFmpeg } = FFmpegWASM;
+const ffmpeg = new FFmpeg();
 
-const ffmpeg = createFFmpeg({
-  log: false,
-  corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js',
-  progress: ({ ratio }) => {
-    const pct = Math.min(Math.round(ratio * 100), 99);
-    document.getElementById('bar-fill').style.width = pct + '%';
-    document.getElementById('bar-label').textContent = `Processing… ${pct}%`;
-  },
+ffmpeg.on('progress', ({ progress }) => {
+  const pct = Math.min(Math.round(progress * 100), 99);
+  document.getElementById('bar-fill').style.width = pct + '%';
+  document.getElementById('bar-label').textContent = `Processing… ${pct}%`;
 });
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -419,7 +415,7 @@ function switchTab(tab) {
 function cleanupSplitFS() {
   clearTimeout(reanalyzeTimeout);
   if (splitInputName) {
-    try { ffmpeg.FS('unlink', splitInputName); } catch (_) {}
+    ffmpeg.deleteFile(splitInputName).catch(() => {});
     splitInputName = null;
   }
   splitFile = null;
@@ -427,7 +423,10 @@ function cleanupSplitFS() {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
-ffmpeg.load().then(() => {
+ffmpeg.load({
+  coreURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+  wasmURL: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
+}).then(() => {
   showStep('step-pick');
 }).catch(e => {
   document.getElementById('step-loading').innerHTML =
@@ -480,22 +479,18 @@ async function extractAudio(file) {
   const inName  = 'input.' + ext;
   const outName = 'output.m4a';
 
-  ffmpeg.FS('writeFile', inName, await fetchFile(file));
+  await ffmpeg.writeFile(inName, new Uint8Array(await file.arrayBuffer()));
 
-  let ok = false;
-  try {
-    await ffmpeg.run('-i', inName, '-vn', '-c:a', 'copy', outName);
-    ok = true;
-  } catch (_) {}
+  let code = await ffmpeg.exec(['-i', inName, '-vn', '-c:a', 'copy', outName]);
 
-  if (!ok) {
+  if (code !== 0) {
     document.getElementById('bar-label').textContent = 'Re-encoding to AAC…';
-    await ffmpeg.run('-i', inName, '-vn', '-c:a', 'aac', '-b:a', '320k', outName);
+    await ffmpeg.exec(['-i', inName, '-vn', '-c:a', 'aac', '-b:a', '320k', outName]);
   }
 
-  const data = ffmpeg.FS('readFile', outName);
-  ffmpeg.FS('unlink', inName);
-  ffmpeg.FS('unlink', outName);
+  const data = await ffmpeg.readFile(outName);
+  await ffmpeg.deleteFile(inName).catch(() => {});
+  await ffmpeg.deleteFile(outName).catch(() => {});
 
   return new Blob([data.buffer], { type: 'audio/mp4' });
 }
@@ -515,7 +510,7 @@ document.getElementById('split-file-input').addEventListener('change', async fun
   showStep('step-analyzing');
   document.getElementById('analyzing-filename').textContent = file.name;
 
-  ffmpeg.FS('writeFile', splitInputName, await fetchFile(file));
+  await ffmpeg.writeFile(splitInputName, new Uint8Array(await file.arrayBuffer()));
 
   splitGap = parseFloat(document.getElementById('gap-slider').value);
   await runAnalysis();
@@ -527,17 +522,16 @@ async function runAnalysis() {
   document.getElementById('analyzing-filename').textContent = splitFile ? splitFile.name : '';
 
   const logs = [];
-  ffmpeg.setLogger(({ message }) => logs.push(message));
+  const logHandler = ({ message }) => logs.push(message);
+  ffmpeg.on('log', logHandler);
 
-  try {
-    await ffmpeg.run(
-      '-i', splitInputName,
-      '-af', `silencedetect=noise=-35dB:d=${splitGap}`,
-      '-f', 'null', '-'
-    );
-  } catch (_) {}
+  await ffmpeg.exec([
+    '-i', splitInputName,
+    '-af', `silencedetect=noise=-35dB:d=${splitGap}`,
+    '-f', 'null', '-'
+  ]);
 
-  ffmpeg.setLogger(() => {});
+  ffmpeg.off('log', logHandler);
 
   const duration = await getAudioDuration(splitFile);
   detectedSongs = parseSilenceSegments(logs, duration);
@@ -661,7 +655,7 @@ async function extractSplitSongs() {
     await promptDownload(blob, `${baseName} - Song ${num}.m4a`, num, total);
   }
 
-  try { ffmpeg.FS('unlink', splitInputName); } catch (_) {}
+  await ffmpeg.deleteFile(splitInputName).catch(() => {});
   splitInputName = null;
   splitFile = null;
 
@@ -675,31 +669,27 @@ async function extractSegment(index) {
   const outName = `song_${index}.m4a`;
   const dur = song.end - song.start;
 
-  let ok = false;
-  try {
-    await ffmpeg.run(
-      '-ss', String(song.start),
-      '-i', splitInputName,
-      '-t', String(dur),
-      '-vn', '-c:a', 'copy',
-      outName
-    );
-    ok = true;
-  } catch (_) {}
+  let code = await ffmpeg.exec([
+    '-ss', String(song.start),
+    '-i', splitInputName,
+    '-t', String(dur),
+    '-vn', '-c:a', 'copy',
+    outName
+  ]);
 
-  if (!ok) {
+  if (code !== 0) {
     document.getElementById('bar-label').textContent = 'Re-encoding to AAC…';
-    await ffmpeg.run(
+    await ffmpeg.exec([
       '-ss', String(song.start),
       '-i', splitInputName,
       '-t', String(dur),
       '-vn', '-c:a', 'aac', '-b:a', '320k',
       outName
-    );
+    ]);
   }
 
-  const data = ffmpeg.FS('readFile', outName);
-  ffmpeg.FS('unlink', outName);
+  const data = await ffmpeg.readFile(outName);
+  await ffmpeg.deleteFile(outName).catch(() => {});
 
   return new Blob([data.buffer], { type: 'audio/mp4' });
 }

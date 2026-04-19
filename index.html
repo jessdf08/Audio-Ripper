@@ -344,7 +344,7 @@ const { createFFmpeg, fetchFile } = FFmpeg;
 
 const ffmpeg = createFFmpeg({
   log: false,
-  corePath: 'https://unpkg.com/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js',
+  corePath: 'https://unpkg.com/@ffmpeg/core-st@0.11.0/dist/ffmpeg-core.js',
   progress: ({ ratio }) => {
     const pct = Math.min(Math.round(ratio * 100), 99);
     document.getElementById('bar-fill').style.width = pct + '%';
